@@ -1,0 +1,26 @@
+/* Footer estático */
+.footer {
+  position: fixed; /* Fija el footer al final de la ventana */
+  bottom: 0;
+  left: 0;
+  width: 100%; /* Ocupa todo el ancho */
+  background-color:#666363; /* Color más oscuro para mayor contraste */
+  color: #fff; /* Texto blanco */
+  text-align: center;
+  padding: 10px 20px; /* Espaciado consistente */
+  box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); /* Sombra para un efecto moderno */
+  z-index: 1000; /* Asegura que esté sobre otros elementos */
+  font-size: 14px; /* Tamaño de fuente cómodo */
+  font-family: 'Arial', sans-serif; /* Fuente limpia */
+}
+
+.footer p {
+  margin: 0; /* Elimina el margen predeterminado del párrafo */
+  line-height: 1.5;
+}
+
+/* Asegura que el contenido no sea bloqueado por el footer */
+body {
+  padding-bottom: 50px; /* Espaciado para evitar solapamiento */
+  box-sizing: border-box;
+}

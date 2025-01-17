@@ -1,0 +1,200 @@
+from flask import Flask, request, jsonify, redirect
+import json
+import os
+import random
+import requests
+from flask_cors import CORS
+from rich.console import Console
+
+# Crear una instancia de consola de rich
+console = Console()
+
+app = Flask(__name__)
+
+# Habilitar CORS para todos los orígenes
+CORS(app)
+
+# Ruta al archivo JSON
+productos_file = 'productos.json'
+
+# Función para leer los productos desde el archivo JSON
+def leer_productos():
+    if not os.path.exists(productos_file):
+        return []
+    with open(productos_file, 'r') as f:
+        return json.load(f)
+
+# Función para escribir los productos en el archivo JSON
+def escribir_productos(productos):
+    with open(productos_file, 'w') as f:
+        json.dump(productos, f, indent=2)
+
+# Ruta para obtener todos los productos
+@app.route('/api/productos', methods=['GET'])
+def obtener_productos():
+    try:
+        productos = leer_productos()
+        console.log("[green]Productos obtenidos con éxito[/green]")
+        return jsonify(productos), 200
+    except Exception as e:
+        console.log(f"[red]Error al obtener los productos: {str(e)}[/red]")
+        return jsonify({'error': str(e)}), 500
+
+# Función para generar un ID único para el nuevo producto
+def generar_id_unico(productos):
+    if productos:  # Si la lista de productos no está vacía
+        ids = [producto['id_producto'] for producto in productos]
+        return max(ids) + 1  # Devuelve el siguiente ID disponible
+    return 1  # Si no hay productos, empieza con ID 1
+
+# Ruta para agregar un nuevo producto
+@app.route('/api/productos', methods=['POST'])
+def agregar_producto():
+    try:
+        data = request.get_json()
+        nombre = data.get('nombre')
+        descripcion = data.get('descripcion')
+        precio = data.get('precio')
+
+        if precio is None:
+            console.log("[yellow]Intento de agregar un producto sin precio[/yellow]")
+            return jsonify({'error': 'El precio es obligatorio'}), 400
+
+        productos = leer_productos()
+
+        # Usar la función para generar un ID único para el nuevo producto
+        id_producto = generar_id_unico(productos)
+
+        nuevo_producto = {
+            'id_producto': id_producto,
+            'nombre': nombre,
+            'descripcion': descripcion,
+            'precio': precio
+        }
+
+        productos.append(nuevo_producto)
+
+        # Guardar los productos en el archivo JSON
+        escribir_productos(productos)
+
+        console.log(f"[green]Producto agregado con éxito: {nombre}[/green]")
+        return jsonify(nuevo_producto), 201
+    except Exception as e:
+        console.log(f"[red]Error al agregar producto: {str(e)}[/red]")
+        return jsonify({'error': str(e)}), 500
+
+# Ruta para eliminar un producto
+@app.route('/api/productos/<int:id>', methods=['DELETE'])
+def eliminar_producto(id):
+    try:
+        productos = leer_productos()
+
+        # Buscar el producto por su ID
+        producto = next((p for p in productos if p['id_producto'] == id), None)
+
+        if producto:
+            productos.remove(producto)
+            escribir_productos(productos)
+            console.log(f"[green]Producto eliminado con éxito: ID {id}[/green]")
+            return jsonify({'message': 'Producto eliminado'}), 200
+        else:
+            console.log(f"[yellow]Producto no encontrado: ID {id}[/yellow]")
+            return jsonify({'error': 'Producto no encontrado'}), 404
+    except Exception as e:
+        console.log(f"[red]Error al eliminar producto: {str(e)}[/red]")
+        return jsonify({'error': str(e)}), 500
+
+# Ruta para sincronizar los productos con la API externa
+@app.route('/api/sincronizar', methods=['GET'])
+def sincronizar_productos():
+    try:
+        response = requests.get('https://jsonplaceholder.typicode.com/posts')
+        if response.status_code == 200:
+            productos_api = response.json()
+            productos = leer_productos()
+
+            nuevos = 0
+            for producto in productos_api:
+                # Verificar si el producto ya está en el archivo
+                if not any(p['nombre'] == producto['title'] for p in productos):
+                    # Generar un precio aleatorio entre 5 y 100 dólares
+                    precio = round(random.uniform(5.0, 100.0), 2)
+
+                    nuevo_producto = {
+                        'id_producto': len(productos) + 1,
+                        'nombre': producto['title'],  # Nombre del producto desde la API externa
+                        'descripcion': producto['body'],  # Descripción del producto desde la API externa
+                        'precio': precio  # Precio aleatorio generado
+                    }
+                    productos.append(nuevo_producto)
+                    nuevos += 1
+
+            if nuevos > 0:
+                escribir_productos(productos)
+                console.log(f"[green]{nuevos} productos sincronizados con éxito[/green]")
+            else:
+                console.log("[yellow]No se encontraron productos nuevos para sincronizar[/yellow]")
+        else:
+            console.log("[red]Error al obtener productos de la API externa[/red]")
+    except Exception as e:
+        console.log(f"[red]Error al sincronizar productos: {str(e)}[/red]")
+
+# Ruta para editar un producto
+@app.route('/api/productos/<int:id>', methods=['PUT'])
+def editar_producto(id):
+    # Lógica para actualizar el producto
+    try:
+        # Obtener los datos enviados en el cuerpo de la solicitud
+        data = request.get_json()
+        if not data:
+            console.log("[yellow]No se proporcionaron datos en la solicitud[/yellow]")
+            return jsonify({'error': 'No se proporcionaron datos'}), 400
+
+        # Leer los productos actuales
+        productos = leer_productos()
+
+        # Buscar el producto con el ID proporcionado
+        producto = next((p for p in productos if p['id_producto'] == id), None)
+
+        # Si no se encuentra el producto, retornar error 404
+        if not producto:
+            console.log(f"[yellow]Producto no encontrado: ID {id}[/yellow]")
+            return jsonify({'error': 'Producto no encontrado'}), 404
+
+        # Actualizar los campos del producto con los valores proporcionados o mantener los existentes
+        producto['nombre'] = data.get('nombre', producto['nombre'])
+        producto['descripcion'] = data.get('descripcion', producto['descripcion'])
+        producto['precio'] = data.get('precio', producto['precio'])
+
+        # Validar que el precio sea un número válido
+        try:
+            producto['precio'] = float(producto['precio'])
+            if producto['precio'] <= 0:
+                console.log("[yellow]El precio debe ser mayor a 0[/yellow]")
+                return jsonify({'error': 'El precio debe ser mayor a 0'}), 400
+        except ValueError:
+            console.log("[yellow]El precio proporcionado no es válido[/yellow]")
+            return jsonify({'error': 'El precio debe ser un número válido'}), 400
+
+        # Guardar los cambios en el archivo de productos
+        escribir_productos(productos)
+
+        console.log(f"[green]Producto actualizado correctamente: ID {id}[/green]")
+        return jsonify({'message': 'Producto actualizado', 'producto': producto}), 200
+
+    except Exception as e:
+        console.log(f"[red]Error al editar producto: {str(e)}[/red]")
+        return jsonify({'error': 'Error interno del servidor', 'details': str(e)}), 500
+
+# Redirección a la interfaz
+@app.route('/')
+def inicio():
+    console.log("[blue]Redirigiendo a la interfaz en el puerto 3000[/blue]")
+    return redirect("http://localhost:3000/")
+
+if __name__ == "__main__":
+    if not os.path.exists(productos_file) or os.path.getsize(productos_file) == 0:
+        sincronizar_productos()
+
+    console.log("[cyan]Iniciando servidor Flask...[/cyan]")
+    app.run(debug=True)
